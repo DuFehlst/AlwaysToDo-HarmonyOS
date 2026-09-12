@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "AlwaysToDo"
+    },
+    {
+      "name": "widget_name",
+      "value": "AlwaysToDo 任务"
+    },
+    {
+      "name": "widget_desc",
+      "value": "今日任务数与待办数，一键添加任务"
+    }
+  ]
+}
