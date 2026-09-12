@@ -3,6 +3,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { DARK_MODE_KEY } from '../common/Theme';
 import { SystemBars } from '../common/SystemBars';
+import { SyncEngine } from '../common/SyncEngine';
+import { WidgetData } from '../common/WidgetData';
 
 const DOMAIN = 0x0000;
 
@@ -44,6 +46,13 @@ export default class EntryAbility extends UIAbility {
     // 主题键必须在页面组件创建前存在（SettingsPage 的 @StorageLink 依赖，键缺失会启动崩溃）
     AppStorage.setOrCreate<boolean>(DARK_MODE_KEY, false);
     AppStorage.setOrCreate<boolean>('showWatched', false);
+
+    // 数据变更后刷新桌面卡片（完成/新增任务 → 卡片立刻跟上）
+    SyncEngine.onChanged = () => {
+      WidgetData.refreshAll();
+    };
+    // 进入 App 也顺手刷新一次卡片（内存为空时 refreshAll 会先拉一次，不会把卡片刷成 0）
+    WidgetData.refreshAll();
 
     // 系统栏刷页面同色（消除底部系统导航栏纯白带 → 见 SystemBars 注释）
     SystemBars.apply(this.context, false);

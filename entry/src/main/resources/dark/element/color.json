@@ -3,6 +3,38 @@
     {
       "name": "start_window_background",
       "value": "#010102"
+    },
+    {
+      "name": "card_bg",
+      "value": "#0F1011"
+    },
+    {
+      "name": "card_text",
+      "value": "#F7F8F8"
+    },
+    {
+      "name": "card_text2",
+      "value": "#D0D6E0"
+    },
+    {
+      "name": "card_text3",
+      "value": "#8A8F98"
+    },
+    {
+      "name": "card_accent",
+      "value": "#5E6AD2"
+    },
+    {
+      "name": "card_border",
+      "value": "#23252A"
+    },
+    {
+      "name": "card_chip",
+      "value": "#141516"
+    },
+    {
+      "name": "card_danger",
+      "value": "#FF6B5E"
     }
   ]
 }

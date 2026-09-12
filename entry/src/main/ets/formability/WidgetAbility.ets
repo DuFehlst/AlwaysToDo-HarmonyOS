@@ -1,79 +1,87 @@
 import { FormExtensionAbility, formBindingData, formProvider } from '@kit.FormKit';
 import { Want } from '@kit.AbilityKit';
-import { ApiClient } from '../common/ApiClient';
+import { Task } from '../common/Models';
 import { SyncEngine } from '../common/SyncEngine';
 import { Store } from '../common/Storage';
+import { WidgetData } from '../common/WidgetData';
 
 /**
- * 桌面服务卡片扩展能力（v1.1）：
- * onAddForm 返回初始绑定数据；onUpdateForm（系统定时 10:30 或手动）拉最新任务数并 updateForm。
+ * 桌面服务卡片扩展能力（v2.0 · P0+P1）：
+ * - onAddForm：按 want 里的 form_dimension 决定布局档位（1x2 / 2x2 / 2x4 / 4x4），注册 formId 到 Preferences
+ * - onUpdateForm：系统定时（form_config：每小时 + 10:30）触发 → 全量拉取后刷新
+ * - onFormEvent：卡片内勾选完成（message: {toggle: taskId}）→ 就地完成 + 推服务端 + 原地刷新（不打开 App）
+ * - onRemoveForm：从注册表移除
  */
 export default class WidgetAbility extends FormExtensionAbility {
   onAddForm(want: Want): formBindingData.FormBindingData {
-    let today = '—';
-    let pending = '—';
-    if (SyncEngine.tasks.length > 0) {
-      const d = new Date();
-      const m = ('0' + (d.getMonth() + 1)).slice(-2);
-      const day = ('0' + d.getDate()).slice(-2);
-      const todayStr = d.getFullYear() + '-' + m + '-' + day;
-      let t = 0;
-      let p = 0;
-      for (let i = 0; i < SyncEngine.tasks.length; i++) {
-        const task = SyncEngine.tasks[i];
-        if (task.dueDate === todayStr && task.status !== 'completed') { t++; }
-        if (task.status === 'pending') { p++; }
-      }
-      today = '' + t;
-      pending = '' + p;
+    let dim = '2x2';
+    if (want.parameters) {
+      const d = want.parameters['ohos.extra.param.key.form_dimension'] as number;
+      if (d !== undefined) { dim = WidgetData.dimLabel(d); }
     }
-    return formBindingData.createFormBindingData({ 'todayCount': today, 'pendingCount': pending, 't1': '', 't2': '', 't3': '' });
+    const formId = want.parameters ? (want.parameters['ohos.extra.param.key.form_id'] as string) : '';
+    if (formId !== undefined && formId !== '') {
+      Store.init(this.context).then(() => {
+        Store.addFormId(formId, dim);
+      });
+    }
+    return formBindingData.createFormBindingData(WidgetData.build(dim, SyncEngine.tasks));
   }
 
   onUpdateForm(formId: string): void {
     this.refresh(formId);
   }
 
+  onRemoveForm(formId: string): void {
+    Store.init(this.context).then(() => {
+      Store.removeFormId(formId);
+    });
+  }
+
+  /** 卡片内交互（message 事件）：目前只处理「勾选完成」 */
+  onFormEvent(formId: string, message: string): void {
+    let taskId = '';
+    try {
+      const p = JSON.parse(message) as Record<string, string>;
+      const v = p['toggle'];
+      if (v !== undefined) { taskId = v; }
+    } catch (e) {
+      taskId = '';
+    }
+    if (taskId === '') { return; }
+    this.complete(formId, taskId);
+  }
+
+  private async complete(formId: string, taskId: string): Promise<void> {
+    try {
+      await Store.init(this.context);
+      // 先在本地缓存里就地完成（卡片立刻有反馈），再推服务端
+      const list = SyncEngine.tasks;
+      let target: Task | null = null;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].id === taskId) { target = list[i]; break; }
+      }
+      if (target !== null) {
+        target.status = 'completed';
+        target.completedAt = new Date().toISOString();
+        target.updatedAt = target.completedAt;
+        target.version = target.version + 1;
+        await SyncEngine.pushOne(target);
+      }
+      await this.refresh(formId);
+    } catch (e) {
+      // 失败忽略：下次定时刷新会纠正
+    }
+  }
+
   async refresh(formId: string): Promise<void> {
     try {
       await Store.init(this.context);
       const list = await SyncEngine.fullPull();
-      const d = new Date();
-      const m = ('0' + (d.getMonth() + 1)).slice(-2);
-      const day = ('0' + d.getDate()).slice(-2);
-      const todayStr = d.getFullYear() + '-' + m + '-' + day;
-      let t = 0;
-      let p = 0;
-      const titles: string[] = [];
-      for (let i = 0; i < list.length; i++) {
-        const task = list[i];
-        if (task.dueDate === todayStr && task.status !== 'completed') { t++; }
-        if (task.status === 'pending') { p++; }
-        if (task.dueDate === todayStr && task.status !== 'completed' && titles.length < 3) {
-          titles.push(task.title);
-        }
-      }
-      // v1.1：今日任务预览（最多 3 条标题）
-      const data: Record<string, string> = {
-        'todayCount': '' + t,
-        'pendingCount': '' + p,
-        't1': titles.length > 0 ? titles[0] : '',
-        't2': titles.length > 1 ? titles[1] : '',
-        't3': titles.length > 2 ? titles[2] : ''
-      };
-      await formProvider.updateForm(formId, formBindingData.createFormBindingData(data));
+      const dim = await Store.getFormDim(formId);
+      await formProvider.updateForm(formId, formBindingData.createFormBindingData(WidgetData.build(dim, list)));
     } catch (e) {
-      // 更新失败忽略（ApiClient.status 备用）
-      try {
-        const s = await ApiClient.status();
-        await formProvider.updateForm(formId, formBindingData.createFormBindingData({ 'todayCount': '—', 'pendingCount': '' + s.pendingCount, 't1': '', 't2': '', 't3': '' }));
-      } catch (e2) {
-        // 忽略
-      }
+      // 离线：保留卡片上一次的内容，不把卡片刷成占位符
     }
-  }
-
-  onFormEvent(formId: string, message: string): void {
-    // 卡片消息事件（预留）
   }
 }

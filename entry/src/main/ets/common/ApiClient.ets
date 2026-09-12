@@ -79,7 +79,7 @@ interface MountRaw {
 
 /**
  * API 客户端（P1·3）——统一走 HTTPS 域名。
- * base = 你的服务地址（/todo 是入口，/api/.. 是数据接口）
+ * base = https://your-server.example/todo 是 nginx 入口，/api/.. 是数据接口）
  */
 export class ApiClient {
   static readonly BASE: string = 'https://your-server.example/todo';   // ← 改成你自己的服务地址

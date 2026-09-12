@@ -134,6 +134,9 @@ export class SyncEngine {
   }
 
   /** 推送单个任务；失败入 outbox */
+  /** 数据变更回调（EntryAbility 注入 → 刷新桌面卡片）；用回调而非直接 import，避免模块循环依赖 */
+  static onChanged: () => void = () => { };
+
   static async pushOne(task: Task): Promise<boolean> {
     const deviceId = await Store.getDeviceId();
     const body = new SyncRequest();
@@ -142,6 +145,7 @@ export class SyncEngine {
     body.changes = [task];
     try {
       await ApiClient.postJson('/api/sync', body);
+      SyncEngine.onChanged();
       return true;
     } catch (e) {
       await Store.pushOutbox(task.id);

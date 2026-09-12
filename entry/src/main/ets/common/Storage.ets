@@ -57,6 +57,32 @@ export class Store {
 
   static async setTheme(v: string): Promise<void> { await Store.put('theme', v); }
   static async getTheme(): Promise<string> { return Store.get('theme', 'light'); }
+
+  // ── 服务卡片：已注册的 formId + 各自尺寸（App 侧主动刷新卡片用） ──
+  static async getFormIds(): Promise<string[]> {
+    const raw = await Store.get('form_ids', '');
+    return raw === '' ? [] : raw.split(',').filter((x: string) => x !== '');
+  }
+
+  static async addFormId(id: string, dim: string): Promise<void> {
+    const ids = await Store.getFormIds();
+    if (ids.indexOf(id) < 0) {
+      ids.push(id);
+      await Store.put('form_ids', ids.join(','));
+    }
+    await Store.put('form_dim_' + id, dim);
+  }
+
+  static async removeFormId(id: string): Promise<void> {
+    const ids = await Store.getFormIds();
+    await Store.put('form_ids', ids.filter((x: string) => x !== id).join(','));
+    await Store.put('form_dim_' + id, '');
+  }
+
+  static async getFormDim(id: string): Promise<string> {
+    const v = await Store.get('form_dim_' + id, '');
+    return v === '' ? '2x2' : v;
+  }
   static async setSort(v: string): Promise<void> { await Store.put('wl_sort', v); }
   static async getSort(): Promise<string> { return Store.get('wl_sort', 'added'); }
 }
