@@ -1,4 +1,4 @@
-﻿import { common } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { FontSize, Palette, Radius, Space, Weight, palette } from '../common/Theme';
 import { SyncEngine } from '../common/SyncEngine';
 import { Store } from '../common/Storage';
@@ -18,6 +18,7 @@ export struct TaskListView {
   @Prop refreshKey: number = 0;   // Index 在保存任务后 bump，触发本页刷新
   @State tick: number = 0;   // 本地变更后 bump 触发重渲染
   @State errText: string = '';   // 同步失败原因（诊断可见）
+  @State doneId: string = '';     // 刚完成、正在播完成动画的行（打勾→划线→淡出移除）
   @State sortMode: string = 'due';   // due / created / importance
   @State sortOpen: boolean = false;  // 排序下拉（页头右侧叠放）
   // 空态「+ 新建任务」回调：由 Index 注入（跳时间线视图拉起新建弹层）
@@ -73,6 +74,8 @@ export struct TaskListView {
     const searching = this.query !== '';   // 搜索是全局的：不受智能列表/分类/完成状态限制
     for (let i = 0; i < list.length; i++) {
       const t = list[i];
+      // 已删除（软删除/墓碑）一律不显示 —— 否则删完只弹提示、行还在（2026-09-13 实测 bug）
+      if (t.isDeleted) { continue; }
       if (searching) {
         if (t.title.indexOf(this.query) < 0 && t.description.indexOf(this.query) < 0) { continue; }
         out.push(t);
@@ -110,12 +113,31 @@ export struct TaskListView {
   }
 
   private async toggleComplete(t: Task): Promise<void> {
-    t.status = t.status === 'completed' ? 'pending' : 'completed';
-    t.completedAt = t.status === 'completed' ? new Date().toISOString() : '';
-    t.updatedAt = new Date().toISOString();
-    t.version = t.version + 1;
-    await SyncEngine.pushOne(t);
-    this.tick = this.tick + 1;
+    // 取消完成：即时切回（带 tick 与划线的回退过渡）
+    if (t.status === 'completed') {
+      animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+        t.status = 'pending';
+        t.completedAt = '';
+        t.updatedAt = new Date().toISOString();
+        t.version = t.version + 1;
+        this.tick = this.tick + 1;
+      });
+      await SyncEngine.pushOne(t);
+      return;
+    }
+    // 完成：先播「打勾 + 标题划线」300ms，再让整行淡出缩小并移出列表 260ms
+    this.doneId = t.id;
+    setTimeout(() => {
+      t.status = 'completed';
+      t.completedAt = new Date().toISOString();
+      t.updatedAt = t.completedAt;
+      t.version = t.version + 1;
+      animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
+        this.doneId = '';
+        this.tick = this.tick + 1;
+      });
+      SyncEngine.pushOne(t);
+    }, 300);
   }
 
   // 页标题（对齐 web pageTitle/titleMap）
@@ -278,7 +300,7 @@ export struct TaskListView {
   taskRow(t: Task) {
     Row() {
       // 完成圈（对齐 web task-ck：20px 圆、1.5px 边、选中 accent 底白勾）
-      Text(t.status === 'completed' ? '✓' : '')
+      Text((t.status === 'completed' || this.doneId === t.id) ? '✓' : '')
         .width(20)
         .height(20)
         .fontSize(FontSize.helper)
@@ -286,9 +308,11 @@ export struct TaskListView {
         .fontColor('#ffffff')
         .textAlign(TextAlign.Center)
         .borderRadius(Radius.pill)
-        .border({ width: 1.5, color: t.status === 'completed' ? this.pal().accent : this.pal().text3 })
-        .backgroundColor(t.status === 'completed' ? this.pal().accent : 'transparent')
+        .border({ width: 1.5, color: (t.status === 'completed' || this.doneId === t.id) ? this.pal().accent : this.pal().text3 })
+        .backgroundColor((t.status === 'completed' || this.doneId === t.id) ? this.pal().accent : 'transparent')
         .margin({ top: 2 })
+        .scale({ x: this.doneId === t.id ? 1.15 : 1, y: this.doneId === t.id ? 1.15 : 1 })
+        .animation({ duration: 260, curve: Curve.EaseOut })
         .onClick(() => {
           this.toggleComplete(t);
         })
@@ -297,7 +321,7 @@ export struct TaskListView {
         Text(t.title)
           .fontSize(FontSize.body)
           .fontWeight(Weight.semibold)
-          .fontColor(this.pal().text)
+          .fontColor((t.status === 'completed' || this.doneId === t.id) ? this.pal().text3 : this.pal().text)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row({ space: 6 }) {
@@ -370,6 +394,8 @@ export struct TaskListView {
     .width('100%')
     .alignItems(VerticalAlign.Top)
     .padding({ left: Space.s2, right: Space.s2, top: 14, bottom: 14 })
+    // 完成/删除后行被过滤出列表时：淡出 + 轻微缩小（移除动效，§2.7 动效=反馈与层级）
+    .transition(TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 1, y: 0.92 })))
     .backgroundColor(this.pal().bg)   // ArkUI ListItem 默认白底，显式盖回页面底色（否则玻璃 dock 下显白块）
     .opacity(t.status === 'completed' ? 0.5 : 1)
   }

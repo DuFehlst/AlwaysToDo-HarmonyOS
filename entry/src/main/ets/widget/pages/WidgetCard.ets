@@ -57,28 +57,35 @@ struct WidgetCard {
   }
 
   private toggle(id: string): void {
-    postCardAction(this, { action: 'message', params: { 'toggle': id } });
+    postCardAction(this, { action: 'message', bundleName: 'com.always.todosync', abilityName: 'EntryAbility', params: { 'toggle': id } });
   }
 
   private openTask(id: string): void {
     postCardAction(this, {
       action: 'router',
-      want: {
-        bundleName: 'com.always.todosync',
-        abilityName: 'EntryAbility',
-        parameters: { 'taskId': id }
-      }
+      bundleName: 'com.always.todosync',
+      abilityName: 'EntryAbility',
+      params: { 'taskId': id }
+    });
+  }
+
+  /** 整卡点击：打开 App（不带参数；点标题才是深链到具体任务） */
+  private openApp(): void {
+    // 扁平写法：桌面（sceneboard）只认 bundleName/abilityName 在顶层；包在 want 里会 "action parse failed"
+    postCardAction(this, {
+      action: 'router',
+      bundleName: 'com.always.todosync',
+      abilityName: 'EntryAbility',
+      params: {}
     });
   }
 
   private openNew(): void {
     postCardAction(this, {
       action: 'router',
-      want: {
-        bundleName: 'com.always.todosync',
-        abilityName: 'EntryAbility',
-        parameters: { 'pendingNew': '1' }
-      }
+      bundleName: 'com.always.todosync',
+      abilityName: 'EntryAbility',
+      params: { 'pendingNew': '1' }
     });
   }
 
@@ -98,6 +105,9 @@ struct WidgetCard {
     }
     .width('100%')
     .height(18)
+    .onClick(() => {
+      this.openApp();
+    })
   }
 
   /** 左下：数字（视觉主语）＋ 标签 */
@@ -306,5 +316,9 @@ struct WidgetCard {
     .padding(14)
     .alignItems(HorizontalAlign.Start)
     .backgroundColor($r('app.color.card_bg'))
+    // 整卡点击 = 打开 App（内层 Checkbox/标题/「+」有自己的动作，不会冒泡到这里）
+    .onClick(() => {
+      this.openApp();
+    })
   }
 }

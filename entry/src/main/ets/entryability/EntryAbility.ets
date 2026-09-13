@@ -23,11 +23,19 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate<string>('pendingNew', '');
     }
     if (want.parameters) {
-      const tid = want.parameters['taskId'] as string;
+      // 卡片 router 事件（扁平写法 {action,abilityName,params}）参数落在 want.parameters.params 里；
+      // 通知深链则是平铺的 taskId/pendingNew —— 两种都收
+      let tid = want.parameters['taskId'] as string;
+      let pnew = want.parameters['pendingNew'] as string;
+      const nested = want.parameters['params'] as Record<string, string>;
+      if (nested) {
+        if (!tid && nested['taskId']) { tid = nested['taskId']; }
+        if (!pnew && nested['pendingNew']) { pnew = nested['pendingNew']; }
+      }
+      hilog.info(DOMAIN, 'testTag', 'want params: %{public}s', JSON.stringify(want.parameters));
       if (tid) {
         AppStorage.setOrCreate<string>('pendingTaskId', tid);
       }
-      const pnew = want.parameters['pendingNew'] as string;
       if (pnew === '1') {
         AppStorage.setOrCreate<string>('pendingNew', '1');
       }
